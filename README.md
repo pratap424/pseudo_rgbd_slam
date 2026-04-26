@@ -18,6 +18,19 @@ A modular ROS2 pipeline that swaps out the Microsoft Kinect with [Depth Anything
 
 The biggest finding: depth confidence masking (filtering ~0.2% of pixels at object boundaries) makes a **26.9× difference** in accuracy. Without it, the system essentially fails.
 
+### 🎥 Demo
+
+> 3-panel live visualization: RGB input | Neural depth (MAGMA colormap) | Real-time trajectory
+
+https://github.com/user-attachments/assets/demo.mp4
+
+<details>
+<summary>Can't see the video? Click to download</summary>
+
+📥 [Download demo.mp4](demo.mp4) (5.3 MB) — Shows the full pipeline running on TUM fr1/desk: RGB frames → DA2 depth inference → ORB-SLAM3 tracking, with real-time trajectory overlay.
+
+</details>
+
 ---
 
 ## Architecture
