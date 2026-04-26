@@ -22,7 +22,7 @@ The biggest finding: depth confidence masking (filtering ~0.2% of pixels at obje
 
 > 3-panel live visualization: RGB input | Neural depth (MAGMA colormap) | Real-time trajectory
 
-https://github.com/user-attachments/assets/demo.mp4
+https://github.com/user-attachments/assets/a4f2821e-6946-407c-9332-792b0649360e
 
 <details>
 <summary>Can't see the video? Click to download</summary>
