@@ -1,4 +1,4 @@
-# Pseudo RGB-D SLAM — Neural Depth × ORB-SLAM3
+# Pseudo RGB-D SLAM — Neural Depth x ORB-SLAM3
 
 > Replace a physical depth sensor with a neural network. Run ORB-SLAM3 on the predicted depth. See how much you lose.
 
@@ -6,7 +6,7 @@ A modular ROS2 pipeline that swaps out the Microsoft Kinect with [Depth Anything
 
 ---
 
-### 🎥 Demo
+## Demo
 
 > 3-panel visualization: **RGB** | **Neural Depth** (MAGMA colormap) | **Real-time Trajectory**
 
@@ -14,31 +14,47 @@ https://github.com/user-attachments/assets/a4f2821e-6946-407c-9332-792b0649360e
 
 ---
 
-### ⚡ Key Results
+## Results
 
-| Metric | Pseudo RGB-D | Real Kinect | Ratio |
+### Trajectory Accuracy
+
+![ATE Comparison](assets/ate_comparison.png)
+
+| Metric | Pseudo RGB-D | Real Kinect (Published) | Ratio |
 |---|---|---|---|
-| **ATE RMSE** | **0.0206 m** | ~0.016 m | **1.3×** |
-| **RPE Translation** | 0.0111 m/frame | — | — |
-| **RPE Rotation** | 0.422 °/frame | — | — |
-| **Depth Inference** | 141ms (7.1 FPS) | Hardware | — |
-| **SLAM Tracking** | 11ms (~90 FPS) | — | — |
-| **Tracking Success** | 98.3% (118/120) | — | — |
+| **ATE RMSE** | **0.0206 m** | ~0.016 m | 1.3x |
+| **RPE Translation** | 0.0111 m/frame | -- | -- |
+| **RPE Rotation** | 0.422 deg/frame | -- | -- |
+| **Tracking Success** | 98.3% (118/120) | -- | -- |
+| **Map Points** | 975 | -- | -- |
 
-**1.3× degradation vs a real depth sensor — neural depth works for SLAM.**
+**1.3x degradation vs real depth sensor.** Neural depth is viable for SLAM.
 
-### 🔬 Ablation: Confidence Masking is Critical
+### Ablation: Confidence Masking
 
-Filtering just ~0.2% of pixels at depth boundaries makes a **26.9× difference** in accuracy:
+Filtering ~0.2% of pixels at depth boundaries makes a **26.9x difference**:
 
-![Ablation: Confidence Masking Impact](assets/ablation_comparison.png)
-
-| | WITH Masking (τ=0.5) | WITHOUT Masking | Improvement |
+| | WITH Masking | WITHOUT Masking | Change |
 |---|---|---|---|
-| **ATE RMSE** | 0.0206 m | 0.5536 m | **26.9×** |
-| **RPE Rot** | 0.42°/frame | 6.79°/frame | **16.1×** |
+| **ATE RMSE** | 0.0206 m | 0.5536 m | **26.9x** |
+| **RPE Rot** | 0.42 deg/frame | 6.79 deg/frame | **16.1x** |
+| **Scale** | 0.5076 | 0.2165 | -- |
 
-> **Takeaway:** You can't just pipe raw neural depth into SLAM. Boundary artifacts from the DPT decoder corrupt the 3D map and crash the optimizer.
+Without masking, boundary artifacts from the DPT decoder corrupt the 3D map and the system essentially fails.
+
+### Performance (Measured)
+
+![Latency Breakdown](assets/latency_breakdown.png)
+
+![GPU vs CPU](assets/gpu_vs_cpu.png)
+
+Pipeline bottleneck is depth inference (92% of total latency). SLAM tracking at ~90 FPS is never the limiting factor.
+
+| Config | Depth FPS | Pipeline FPS | Measured? |
+|---|---|---|---|
+| **GTX 1650 (FP32)** | **7.2** | **7.1** | Yes |
+| CPU only (FP32) | 2.1 | 2.1 | Yes |
+| GPU speedup | -- | **3.4x** | Yes |
 
 ---
 
@@ -46,11 +62,11 @@ Filtering just ~0.2% of pixels at depth boundaries makes a **26.9× difference**
 
 ```mermaid
 graph LR
-    A["🎬 Node A<br/>Dataset Broadcaster<br/><i>Python • 5 Hz</i>"] -->|"/camera/rgb<br/>640×480 bgr8"| B
-    B["🧠 Node B<br/>Depth Estimator<br/><i>DA2 ViT-S • 141ms</i>"] -->|"/camera/depth<br/>640×480 16UC1"| C
-    C["📍 Node C<br/>ORB-SLAM3 RGBD<br/><i>Custom C++ • 11ms</i>"] -->|"/slam/trajectory"| D["📊 Evaluation<br/>ATE / RPE"]
-    
-    B -->|"/camera/depth_colormap"| R["🎥 Recorder<br/>3-panel MP4"]
+    A["Node A<br/>Dataset Broadcaster<br/><i>Python, 5 Hz</i>"] -->|"/camera/rgb<br/>640x480 bgr8"| B
+    B["Node B<br/>Depth Estimator<br/><i>DA2 ViT-S, 141ms</i>"] -->|"/camera/depth<br/>640x480 16UC1"| C
+    C["Node C<br/>ORB-SLAM3 RGBD<br/><i>Custom C++, 11ms</i>"] -->|"/slam/trajectory"| D["Evaluation<br/>ATE / RPE"]
+
+    B -->|"/camera/depth_colormap"| R["Recorder<br/>3-panel MP4"]
     A -->|"/camera/rgb"| R
     C -->|"/slam/trajectory"| R
 
@@ -61,97 +77,75 @@ graph LR
     style R fill:#845ef7,color:#fff
 ```
 
-**Pipeline throughput:** 7.1 FPS (bottleneck: DA2 depth inference on GTX 1650)
-
-### ROS2 Topics
-
-| Topic | Type | Description |
-|---|---|---|
-| `/camera/rgb` | `Image` (bgr8) | RGB frames from TUM dataset |
-| `/camera/depth_predicted` | `Image` (16UC1) | Neural metric depth (×5000) |
-| `/camera/depth_colormap` | `Image` (bgr8) | Colorized depth visualization |
-| `/slam/camera_pose` | `PoseStamped` | Current camera pose in SE(3) |
-| `/slam/trajectory` | `Path` | Full trajectory for evaluation |
-| `/slam/map_points` | `PointCloud2` | Sparse 3D map |
-
 ---
 
-## Key Design Decisions
+## Design Decisions
 
-### 🧠 Depth Model: DA2 Metric Indoor Small
-
-```mermaid
-graph TD
-    RGB["RGB Frame<br/>640×480"] --> VIT["ViT-S Encoder<br/>(DINOv2 backbone)"]
-    VIT --> DPT["DPT Decoder<br/>(multi-scale fusion)"]
-    DPT --> DEPTH["Metric Depth<br/>float32 meters"]
-    DEPTH --> MASK["Confidence Mask<br/>Sobel gradient filter<br/>τ=0.5"]
-    MASK --> UINT["uint16 Conversion<br/>depth × 5000"]
-    UINT --> SLAM["ORB-SLAM3<br/>TrackRGBD()"]
-
-    style MASK fill:#ff6b6b,color:#fff
-    style SLAM fill:#51cf66,color:#fff
-```
+### Depth Model: DA2 Metric Indoor Small
 
 | Property | Value |
 |---|---|
 | **Output** | Metric depth in meters (float32) |
 | **Backbone** | ViT-S (DINOv2), ~25M parameters |
-| **Training** | Hypersim synthetic indoor dataset |
-| **Speed** | 141ms/frame (GPU) · 467ms (CPU) |
+| **Training** | Hypersim synthetic indoor |
+| **Speed** | 141ms/frame (GPU), 467ms (CPU) |
 
-Why not Metric3D v2? 2.5× slower. Why not ZoeDepth? Weak on indoor scenes. Why not UniDepthV2? Too big for the 2GB GPU constraint.
+Why not Metric3D v2? 2.5x slower. Why not UniDepthV2? Too big for 2GB GPU constraint.
 
-### 📍 SLAM: ORB-SLAM3 (RGB-D Mode)
+### Depth Confidence Masking
 
-ORB-SLAM3 is ORB-SLAM2's direct successor by the same team. The RGB-D tracking pipeline is identical: ORB features → depth backprojection → PnP + RANSAC → Bundle Adjustment on SE(3) → DBoW2 loop closing. I wrote a custom C++ ROS2 wrapper from scratch rather than using off-the-shelf wrappers.
+```mermaid
+graph LR
+    D["Depth Map<br/>(float32)"] --> S["Sobel Gradient"]
+    S --> R["Relative Gradient<br/>grad / depth"]
+    R --> T{"g_rel > 0.5?"}
+    T -->|Yes| Z["Set depth = 0<br/>(ORB-SLAM3 ignores)"]
+    T -->|No| K["Keep depth"]
+    Z --> O["Filtered Depth"]
+    K --> O
 
-### 🔒 Depth Confidence Masking
+    style Z fill:#e74c3c,color:#fff
+    style O fill:#27ae60,color:#fff
+```
 
-Neural depth is noisiest at object boundaries. I compute the Sobel gradient of the depth map as a confidence proxy and zero out high-gradient regions (depth=0 tells ORB-SLAM3 to ignore the pixel). Ablation showed this is **essential** — see results above.
+~0.2% of pixels filtered. **26.9x ATE improvement** (validated via ablation).
+
+### SLAM: ORB-SLAM3 (RGB-D Mode)
+
+ORB-SLAM3 is ORB-SLAM2's direct successor by the same team. I wrote a custom C++ ROS2 wrapper from scratch that calls `TrackRGBD()` and publishes poses, trajectory, and map points.
 
 ---
 
 ## Quick Start
 
-### Prerequisites
-- Windows 11 + WSL2 (Ubuntu 22.04/24.04)
-- NVIDIA GPU (GTX 1650 or better, 4GB+ VRAM)
-- Docker + NVIDIA Container Toolkit
-
-### 1. Build Docker Image
 ```bash
+# Clone and build
+git clone https://github.com/pratap424/pseudo_rgbd_slam.git
 cd pseudo_rgbd_slam/docker
-docker compose build    # ~30-45 minutes
-```
+docker compose build          # ~30-45 min
 
-### 2. Download TUM Dataset
-```bash
-docker compose run pseudo_slam bash scripts/download_tum_dataset.sh /data
-```
+# Start container
+docker compose up -d
+docker exec -it slam_dev bash
 
-### 3. Build ROS2 Package
-```bash
-docker compose run pseudo_slam bash -c "
-    source /opt/ros/humble/setup.bash
-    cd /ros2_ws
-    colcon build --symlink-install
-    source install/setup.bash
-"
-```
+# Inside container
+source /opt/ros/humble/setup.bash
+cd /ros2_ws && colcon build --symlink-install
+source install/setup.bash
 
-### 4. Run Pipeline
-```bash
-# Launch all 3 nodes
-docker compose run pseudo_slam bash -c "
-    source /opt/ros/humble/setup.bash
-    source /ros2_ws/install/setup.bash
-    ros2 launch pseudo_rgbd_slam pseudo_slam.launch.py
-"
-```
+# Terminal 1: Node A
+ros2 run pseudo_rgbd_slam node_a --ros-args \
+    -p dataset_path:=/data/rgbd_dataset_freiburg1_desk -p publish_rate:=5.0
 
-### 5. Evaluate
-```bash
+# Terminal 2: Node B
+ros2 run pseudo_rgbd_slam node_b --ros-args -p device:=cuda
+
+# Terminal 3: Node C
+export LD_LIBRARY_PATH=/opt/ORB_SLAM3/lib:$LD_LIBRARY_PATH
+ros2 run pseudo_rgbd_slam node_c_pseudo_slam --ros-args \
+    -p use_viewer:=false -p save_trajectory:=true
+
+# Evaluate
 python3 evaluation/trajectory_eval.py \
     --gt /data/rgbd_dataset_freiburg1_desk/groundtruth.txt \
     --est /data/trajectory_pseudo.txt
@@ -163,50 +157,20 @@ python3 evaluation/trajectory_eval.py \
 
 ```
 pseudo_rgbd_slam/
-├── docker/
-│   ├── Dockerfile                    # CUDA + ROS2 Humble + ORB-SLAM3 + DA2
-│   └── docker-compose.yml
-├── config/
-│   └── TUM1.yaml                     # ORB-SLAM3 config (fr1 Kinect intrinsics)
-├── launch/
-│   └── pseudo_slam.launch.py        # Orchestrates all 3 nodes
+├── docker/Dockerfile              # CUDA + ROS2 + ORB-SLAM3 + DA2
+├── config/TUM1.yaml               # ORB-SLAM3 intrinsics
 ├── pseudo_rgbd_slam/
-│   ├── node_a_broadcaster.py        # Node A: TUM dataset reader
-│   ├── node_b_depth_estimator.py    # Node B: DA2 depth + confidence masking
-│   └── record_demo.py               # 3-panel video recorder
-├── src/
-│   └── node_c_pseudo_slam.cpp       # Node C: ORB-SLAM3 C++ wrapper
-├── evaluation/
-│   └── trajectory_eval.py           # ATE/RPE with Umeyama alignment
-├── assets/                           # Images for README
-├── report/
-│   └── report.md                    # Full technical report with math
-├── demo.mp4                          # Screen recording
-├── CMakeLists.txt                    # Mixed C++/Python ament_cmake build
-└── README.md
+│   ├── node_a_broadcaster.py      # Node A: TUM dataset reader
+│   ├── node_b_depth_estimator.py  # Node B: DA2 depth + masking
+│   └── record_demo.py             # 3-panel video recorder
+├── src/node_c_pseudo_slam.cpp     # Node C: ORB-SLAM3 C++ wrapper
+├── evaluation/trajectory_eval.py  # ATE/RPE with Umeyama alignment
+├── report/report.md               # Full technical report
+├── assets/                        # Generated figures
+└── demo.mp4                       # Screen recording
 ```
 
----
-
-## Mathematical Background
-
-See [report/report.md](report/report.md) for full derivations including:
-- Pinhole backprojection & depth conversion math
-- SE(3) vs Sim(3) analysis for pseudo RGB-D
-- Huber kernel connection to neural depth noise
-- DPT architecture breakdown
-- Real-time feasibility analysis with Jetson projections
-
----
-
-## Related Work
-
-This project builds on my earlier **Aerial Guardian** drone MOT work (same assignment series), where I implemented:
-- ORB feature extraction + RANSAC affine estimation for camera motion compensation
-- Real-time perception on Jetson Orin Nano (14.5–36.9 FPS with TensorRT)
-- Modular pipeline with ablation studies
-
-The ORB pipeline in Aerial Guardian's `camera_motion.py` is essentially the same thing ORB-SLAM3's frontend does — same FAST corners, same binary descriptors, same Hamming matching, same RANSAC.
+See [report/report.md](report/report.md) for full technical report with mathematical derivations, scale bias analysis, and drone deployment considerations.
 
 ---
 

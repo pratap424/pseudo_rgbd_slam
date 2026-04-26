@@ -224,17 +224,24 @@ All trajectory errors are computed **after Sim(3) Umeyama alignment** (estimatin
 
 The assignment asks: *"How close is your system to run in real-time on max 2GB GPU or CPU only?"*
 
-We benchmarked DA2 Metric Indoor Small on both GPU and CPU (measured, not estimated):
+I benchmarked DA2 Metric Indoor Small on both GPU and CPU:
 
-| Configuration | Depth Latency | Depth FPS | SLAM Latency | Pipeline FPS | Real-time? |
-|---|---|---|---|---|---|
-| **GTX 1650 (4GB), PyTorch FP32** | **138ms** | **7.2 FPS** | 11ms | **7.2** | Near RT |
-| CPU only, PyTorch FP32 | **467ms** | **2.1 FPS** | 11ms | **2.1** | ❌ Not RT |
-| GTX 1650, ONNX FP16 (projected) | ~70ms | ~14 FPS | 11ms | ~14 | ✅ Near RT |
-| 2GB GPU, ONNX FP16 (projected) | ~100ms | ~10 FPS | 11ms | ~10 | ✅ Near RT |
-| Jetson Orin Nano, TRT FP16 (projected) | ~60ms | ~16 FPS | 11ms | ~16 | ✅ RT |
+**Measured results:**
 
-**Measured GPU speedup: 3.4×** (GPU/CPU). The depth model is the sole bottleneck — SLAM tracking at 11ms (~90 FPS) is never the limiting factor.
+| Configuration | Depth Latency | Depth FPS | SLAM Latency | Pipeline FPS |
+|---|---|---|---|---|
+| **GTX 1650 (4GB), PyTorch FP32** | **138ms** | **7.2 FPS** | 11ms | **7.2** |
+| CPU only, PyTorch FP32 | **467ms** | **2.1 FPS** | 11ms | **2.1** |
+
+**Measured GPU speedup: 3.4x.** The depth model is the sole bottleneck -- SLAM tracking at 11ms (~90 FPS) is never the limiting factor. Neither configuration reaches 30 FPS real-time.
+
+**Projected path to real-time** (not measured, based on public ViT-S benchmarks and my TensorRT experience from [Aerial Guardian](../visdrone_mot/)):
+
+| Optimization | Expected Speedup | Projected FPS | Basis |
+|---|---|---|---|
+| ONNX FP16 | ~2x | ~14 FPS | PyTorch overhead elimination |
+| TensorRT INT8 | ~4x | ~28 FPS | Kernel fusion + tensor cores |
+| + Input 320x240 | ~4-6x | ~30+ FPS | Reduced computation |
 
 **Path to real-time (30 FPS):**
 1. **ONNX export** with FP16 quantization → 2× speedup (PyTorch overhead elimination)
