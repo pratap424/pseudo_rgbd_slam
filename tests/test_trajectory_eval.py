@@ -21,9 +21,11 @@ trajectory_eval = _load_module("trajectory_eval", "evaluation/trajectory_eval.py
 
 def _pose(tx=0.0, ty=0.0, tz=0.0, yaw_deg=0.0):
     yaw = math.radians(yaw_deg)
-    c, s = math.cos(yaw), math.sin(yaw)
+    cos_yaw, sin_yaw = math.cos(yaw), math.sin(yaw)
     t = np.eye(4, dtype=np.float64)
-    t[:3, :3] = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]], dtype=np.float64)
+    t[:3, :3] = np.array(
+        [[cos_yaw, -sin_yaw, 0], [sin_yaw, cos_yaw, 0], [0, 0, 1]], dtype=np.float64
+    )
     t[:3, 3] = [tx, ty, tz]
     return t
 
