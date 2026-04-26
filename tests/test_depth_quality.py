@@ -1,22 +1,12 @@
-import importlib.util
 import math
 import tempfile
 import unittest
 from pathlib import Path
 
 import numpy as np
+from _test_utils import load_module
 
-
-def _load_module(module_name: str, relative_path: str):
-    root = Path(__file__).resolve().parents[1]
-    module_path = root / relative_path
-    spec = importlib.util.spec_from_file_location(module_name, module_path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-depth_quality = _load_module("depth_quality", "evaluation/depth_quality.py")
+depth_quality = load_module("depth_quality", "evaluation/depth_quality.py")
 
 DEPTH_1M = 5000
 DEPTH_1_5M = 7500
