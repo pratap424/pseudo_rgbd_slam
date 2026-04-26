@@ -47,7 +47,6 @@ Without masking, boundary artifacts from the DPT decoder corrupt the 3D map and 
 ![Latency Breakdown](assets/latency_breakdown.png)
 
 ![GPU vs CPU](assets/gpu_vs_cpu.png)
-
 Pipeline bottleneck is depth inference (92% of total latency). SLAM tracking at ~90 FPS is never the limiting factor.
 
 | Config | Depth FPS | Pipeline FPS | Measured? |
@@ -55,6 +54,8 @@ Pipeline bottleneck is depth inference (92% of total latency). SLAM tracking at 
 | **GTX 1650 (FP32)** | **7.2** | **7.1** | Yes |
 | CPU only (FP32) | 2.1 | 2.1 | Yes |
 | GPU speedup | -- | **3.4x** | Yes |
+
+**Path to real-time:** ONNX FP16 + TensorRT INT8 optimization could reach ~28 FPS based on public ViT-S benchmarks. I've deployed similar models on Jetson Orin Nano at 14.5-36.9 FPS with TensorRT in my [Aerial Guardian](../visdrone_mot/) project.
 
 ---
 
@@ -77,6 +78,17 @@ graph LR
     style R fill:#845ef7,color:#fff
 ```
 
+### ROS2 Topics
+
+| Topic | Type | Description |
+|---|---|---|
+| `/camera/rgb` | `sensor_msgs/Image` (bgr8) | RGB frames from TUM dataset |
+| `/camera/depth_predicted` | `sensor_msgs/Image` (16UC1) | Neural metric depth (x5000) |
+| `/camera/depth_colormap` | `sensor_msgs/Image` (bgr8) | Colorized depth visualization |
+| `/slam/camera_pose` | `geometry_msgs/PoseStamped` | Current camera pose in SE(3) |
+| `/slam/trajectory` | `nav_msgs/Path` | Full trajectory for evaluation |
+| `/slam/map_points` | `sensor_msgs/PointCloud2` | Sparse 3D map |
+
 ---
 
 ## Design Decisions
@@ -85,12 +97,13 @@ graph LR
 
 | Property | Value |
 |---|---|
-| **Output** | Metric depth in meters (float32) |
+| **Output** | Metric depth in meters (float32) -- NO scale alignment needed |
 | **Backbone** | ViT-S (DINOv2), ~25M parameters |
-| **Training** | Hypersim synthetic indoor |
+| **Training** | Hypersim synthetic indoor dataset |
 | **Speed** | 141ms/frame (GPU), 467ms (CPU) |
+| **ONNX/TRT** | Supported for edge deployment |
 
-Why not Metric3D v2? 2.5x slower. Why not UniDepthV2? Too big for 2GB GPU constraint.
+Why not Metric3D v2? 2.5x slower. Why not UniDepthV2? Too big for 2GB GPU constraint. Why not ZoeDepth? Weaker on indoor scenes.
 
 ### Depth Confidence Masking
 
@@ -112,7 +125,7 @@ graph LR
 
 ### SLAM: ORB-SLAM3 (RGB-D Mode)
 
-ORB-SLAM3 is ORB-SLAM2's direct successor by the same team. I wrote a custom C++ ROS2 wrapper from scratch that calls `TrackRGBD()` and publishes poses, trajectory, and map points.
+ORB-SLAM3 is ORB-SLAM2's direct successor by the same team (Mur-Artal & Tardos, IEEE TRO 2021). The RGB-D tracking pipeline is identical: ORB features -> depth backprojection -> PnP + RANSAC -> Bundle Adjustment on SE(3) -> DBoW2 loop closing. I wrote a custom C++ ROS2 wrapper from scratch that calls `TrackRGBD()` and publishes poses, trajectory, and map points.
 
 ---
 
@@ -157,23 +170,61 @@ python3 evaluation/trajectory_eval.py \
 
 ```
 pseudo_rgbd_slam/
-├── docker/Dockerfile              # CUDA + ROS2 + ORB-SLAM3 + DA2
-├── config/TUM1.yaml               # ORB-SLAM3 intrinsics
+├── docker/
+│   ├── Dockerfile                    # CUDA + ROS2 Humble + ORB-SLAM3 + DA2
+│   └── docker-compose.yml
+├── config/
+│   └── TUM1.yaml                     # ORB-SLAM3 config (fr1 Kinect intrinsics)
 ├── pseudo_rgbd_slam/
-│   ├── node_a_broadcaster.py      # Node A: TUM dataset reader
-│   ├── node_b_depth_estimator.py  # Node B: DA2 depth + masking
-│   └── record_demo.py             # 3-panel video recorder
-├── src/node_c_pseudo_slam.cpp     # Node C: ORB-SLAM3 C++ wrapper
-├── evaluation/trajectory_eval.py  # ATE/RPE with Umeyama alignment
-├── report/report.md               # Full technical report
-├── assets/                        # Generated figures
-└── demo.mp4                       # Screen recording
+│   ├── node_a_broadcaster.py        # Node A: TUM dataset reader
+│   ├── node_b_depth_estimator.py    # Node B: DA2 depth + confidence masking
+│   └── record_demo.py               # 3-panel video recorder
+├── src/
+│   └── node_c_pseudo_slam.cpp       # Node C: ORB-SLAM3 C++ wrapper
+├── evaluation/
+│   └── trajectory_eval.py           # ATE/RPE with Umeyama alignment
+├── assets/                           # Generated figures (matplotlib)
+├── report/
+│   └── report.md                    # Full technical report with math
+├── generate_figures.py               # Script to reproduce all graphs
+├── demo.mp4                          # Screen recording
+├── CMakeLists.txt                    # Mixed C++/Python ament_cmake build
+└── package.xml                       # ROS2 package manifest
 ```
 
-See [report/report.md](report/report.md) for full technical report with mathematical derivations, scale bias analysis, and drone deployment considerations.
+---
+
+## Mathematical Background
+
+See [report/report.md](report/report.md) for full derivations. Key equations:
+
+**Depth Backprojection:** Given pixel (u,v) with depth d:
+
+P_cam = d * K^{-1} * [u, v, 1]^T
+
+**Reprojection Error (Bundle Adjustment):** ORB-SLAM3 minimizes the Huber-robust reprojection error over SE(3):
+
+T_hat = argmin_{T} sum_i rho_H( || u_i - pi(T * P_i) ||^2 )
+
+**Confidence Mask:** Relative gradient filter:
+
+g_rel(x,y) = ||grad(d)|| / max(d, epsilon),  mask where g_rel > 0.5
+
+The report also covers SE(3) vs Sim(3) analysis, DPT decoder architecture, scale bias discussion, and drone deployment considerations.
+
+---
+
+## Related Work
+
+This project builds on my earlier **Aerial Guardian** drone MOT work (same assignment series), where I implemented:
+- ORB feature extraction + RANSAC affine estimation for camera motion compensation
+- Real-time perception on Jetson Orin Nano (14.5-36.9 FPS with TensorRT)
+- Modular pipeline with ablation studies
+
+The ORB pipeline in Aerial Guardian's `camera_motion.py` is essentially the same thing ORB-SLAM3's frontend does -- same FAST corners, same binary descriptors, same Hamming matching, same RANSAC.
 
 ---
 
 ## License
 
-
+MIT
