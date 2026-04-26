@@ -10,7 +10,7 @@ A modular ROS2 pipeline that swaps out the Microsoft Kinect with [Depth Anything
 
 > 3-panel visualization: **RGB** | **Neural Depth** (MAGMA colormap) | **Real-time Trajectory**
 
-https://github.com/user-attachments/assets/a4f2821e-6946-407c-9332-792b0649360e
+[**Watch Demo Video**](https://drive.google.com/file/d/1Jq4osQXf6RYMrLOymD4pJQxmo45wOVXM/view?usp=drive_link)
 
 ---
 
