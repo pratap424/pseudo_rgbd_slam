@@ -1,0 +1,32 @@
+services:
+  pseudo_slam:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: pseudo_rgbd_slam:latest
+    container_name: pseudo_rgbd_slam
+    runtime: nvidia
+    environment:
+      - DISPLAY=${DISPLAY}
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - QT_X11_NO_MITSHM=1
+    volumes:
+      # Mount project source for live development
+      - ../src:/ros2_ws/src/pseudo_rgbd_slam/src
+      - ../config:/ros2_ws/src/pseudo_rgbd_slam/config
+      - ../launch:/ros2_ws/src/pseudo_rgbd_slam/launch
+      - ../evaluation:/ros2_ws/src/pseudo_rgbd_slam/evaluation
+      - ../pseudo_rgbd_slam:/ros2_ws/src/pseudo_rgbd_slam/pseudo_rgbd_slam
+      - ../package.xml:/ros2_ws/src/pseudo_rgbd_slam/package.xml
+      - ../CMakeLists.txt:/ros2_ws/src/pseudo_rgbd_slam/CMakeLists.txt
+      - ../setup.py:/ros2_ws/src/pseudo_rgbd_slam/setup.py
+      - ../setup.cfg:/ros2_ws/src/pseudo_rgbd_slam/setup.cfg
+      # Mount dataset directory
+      - ../data:/data
+      # X11 forwarding
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    network_mode: host
+    stdin_open: true
+    tty: true
+    command: bash
